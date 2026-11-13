@@ -1,0 +1,12 @@
+[Unit]
+Description=stonks: run the paper trader 15 minutes after the US market opens
+
+[Timer]
+# Eastern time, so daylight saving is handled automatically.
+# Holidays are fine: the bot asks Alpaca whether the market is open and exits if not.
+OnCalendar=Mon..Fri 09:45 America/New_York
+# If the server was off at 9:45, run once when it comes back (it exits if the market has closed).
+Persistent=true
+
+[Install]
+WantedBy=timers.target

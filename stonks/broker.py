@@ -8,6 +8,7 @@ so it can't tell (and doesn't care) whether money is real, paper or simulated.
 import json
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -40,6 +41,9 @@ class Broker(Protocol):
     def market_is_open(self) -> bool: ...
     def account(self) -> Account: ...
     def holdings(self) -> dict[str, Holding]: ...
+    def traded_today(self, today) -> bool:
+        """True if this bot already placed orders today (from any computer)."""
+        ...
     def market_orders(self, orders: list[tuple[str, str, int]]) -> list[Fill]:
         """Submit (ticker, side, qty) market orders and wait until they finish."""
         ...
@@ -67,6 +71,9 @@ class SimBroker:
 
     def market_is_open(self) -> bool:
         return True
+
+    def traded_today(self, today) -> bool:
+        return False   # the sim account only lives on this computer; state.json covers it
 
     def account(self) -> Account:
         value = sum(h.qty * self.prices.get(t, h.avg_price) for t, h in self.positions.items())
@@ -123,6 +130,9 @@ def load_env(path: Path) -> None:
             os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+ORDER_ID_PREFIX = "stonks-"
+
+
 class AlpacaPaperBroker:
     name = "alpaca-paper"
 
@@ -137,11 +147,22 @@ class AlpacaPaperBroker:
         # Alpaca paper keys start with "PK"; live keys don't. Never touch a live account here.
         if not api_key.startswith("PK"):
             raise RuntimeError("That doesn't look like a PAPER key (paper keys start with 'PK'). Refusing to run.")
+        self.api_key, self.secret_key = api_key, secret_key
         self.client = TradingClient(api_key, secret_key, paper=True)
         self.fill_timeout_s = fill_timeout_s
 
     def market_is_open(self) -> bool:
         return bool(self.client.get_clock().is_open)
+
+    def traded_today(self, today) -> bool:
+        """Look in the Alpaca account itself, so two computers can't both trade the same day."""
+        import pandas as pd
+        from alpaca.trading.enums import QueryOrderStatus
+        from alpaca.trading.requests import GetOrdersRequest
+
+        midnight = pd.Timestamp(today).normalize().tz_localize("America/New_York").to_pydatetime()
+        orders = self.client.get_orders(GetOrdersRequest(status=QueryOrderStatus.ALL, after=midnight, limit=500))
+        return any((o.client_order_id or "").startswith(ORDER_ID_PREFIX) for o in orders)
 
     def account(self) -> Account:
         a = self.client.get_account()
@@ -162,6 +183,7 @@ class AlpacaPaperBroker:
             try:
                 order = self.client.submit_order(MarketOrderRequest(
                     symbol=ticker, qty=qty, time_in_force=TimeInForce.DAY,
+                    client_order_id=f"{ORDER_ID_PREFIX}{uuid.uuid4().hex[:20]}",
                     side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
                 ))
                 submitted.append((ticker, side, qty, order.id))

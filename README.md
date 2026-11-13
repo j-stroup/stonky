@@ -57,13 +57,32 @@ Use Windows Task Scheduler. Pick a time about 15 minutes after the 9:30 AM Easte
 schtasks /create /tn "stonks paper" /sc weekly /d MON,TUE,WED,THU,FRI /st 09:45 /tr "\"C:\path\to\stonks\.venv\Scripts\python.exe\" \"C:\path\to\stonks\paper_trade.py\" alpaca"
 ```
 
+### Run it on a Linux server (VPS)
+
+In alpaca mode, prices come from Alpaca's own market data, not Yahoo, because Yahoo often blocks data-center IP addresses. Use `--data yahoo` to switch back.
+
+```
+git clone https://github.com/j-stroup/stonky.git stonks && cd stonks
+# copy .env from your PC into this folder (scp, or paste it with nano)
+# copy state/alpaca/ too, if the bot has already traded from your PC
+bash deploy/setup.sh
+```
+
+`setup.sh` creates the Python environment, runs the tests and a dry run, then installs a systemd timer. The timer runs the bot Monday to Friday at 9:45 AM **Eastern**, whatever time zone the server is in. To update later, run `git pull`, then `bash deploy/setup.sh` again.
+
+- **Logs:** `journalctl -u stonks-paper --since today` and `state/alpaca/journal.log`
+- **Pause:** `touch STOP`. Resume: `rm STOP`
+- **Remove:** `sudo systemctl disable --now stonks-paper.timer`
+
+**Only schedule it in one place.** Before trading, alpaca mode checks the Alpaca account for orders this bot already placed today. So if your PC and the server both run it, the second one will skip. The purchase dates in `state/` are still per-machine, though, so pick one machine and stick with it.
+
 ### Safety
 
 - **Kill switch:** create a file named `STOP` in this folder and nothing trades until you delete it.
 - **Drawdown halt:** if the account falls 12% from its best value, it stops buying. Sells still run, so stop losses keep working. It stays stopped until you run with `--reset-halt`. The backtest's worst drop was about 10%, so a bigger one means something is behaving differently from what was tested.
 - It only trades the ETFs in `config.py` and SHY. Anything else in the account is left alone.
 - It refuses to trade if the price data is stale or includes today's unfinished bar.
-- It only runs once per day. Use `--force` to run it again.
+- It runs once per day, even across computers. Use `--force` to run it again.
 - It only accepts paper keys.
 
 Every decision and fill is written to `state/<mode>/journal.log`, and account value is logged to `state/<mode>/equity_history.csv` each day.
@@ -94,6 +113,7 @@ Decisions use the day's closing price. Orders are filled at the **next day's ope
 - `paper_trade.py`: the daily paper-trading command
 - `stonks/live.py`: the daily routine (decide, sell, buy, park) and safety stops
 - `stonks/broker.py`: the sim account and the Alpaca paper account behind one interface
+- `deploy/`: systemd service and timer, and `setup.sh` for a Linux server
 - `tests/`: checks that each rule fires when it should
 
 ## What the backtests showed so far

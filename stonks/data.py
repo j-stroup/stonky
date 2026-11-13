@@ -37,6 +37,47 @@ def load_recent(ticker: str, today: pd.Timestamp, calendar_days: int = 450) -> p
     return df[df.index < today.normalize()]
 
 
+def load_recent_alpaca(tickers: list[str], today: pd.Timestamp, api_key: str, secret_key: str,
+                       calendar_days: int = 450) -> dict[str, pd.DataFrame]:
+    """Fresh daily bars from Alpaca's market data, ending with the last COMPLETE day.
+
+    Works from servers where Yahoo blocks data-center IP addresses. Prices are
+    adjusted for splits only, so they match the real prices you paid; that keeps
+    gain/loss checks against your entry price exact.
+    """
+    from alpaca.data.enums import Adjustment, DataFeed
+    from alpaca.data.historical import StockHistoricalDataClient
+    from alpaca.data.requests import StockBarsRequest
+    from alpaca.data.timeframe import TimeFrame
+
+    client = StockHistoricalDataClient(api_key, secret_key)
+    start = (today - pd.Timedelta(days=calendar_days)).tz_localize("America/New_York")
+    end = today.normalize().tz_localize("America/New_York")
+    last_error = None
+    for feed in (DataFeed.SIP, DataFeed.IEX):   # SIP = all exchanges; IEX = free fallback
+        try:
+            raw = client.get_stock_bars(StockBarsRequest(
+                symbol_or_symbols=tickers, timeframe=TimeFrame.Day, start=start.to_pydatetime(),
+                end=end.to_pydatetime(), adjustment=Adjustment.SPLIT, feed=feed,
+            )).df
+            break
+        except Exception as e:
+            last_error = e
+    else:
+        raise RuntimeError(f"Alpaca price download failed: {last_error!r}")
+
+    out = {}
+    for ticker in tickers:
+        if ticker not in raw.index.get_level_values(0):
+            raise RuntimeError(f"No Alpaca price data for {ticker}")
+        df = raw.xs(ticker, level=0).rename(columns=str.capitalize)
+        # Daily bars are stamped at midnight Eastern (in UTC); turn that into a plain date.
+        df.index = df.index.tz_convert("America/New_York").tz_localize(None).normalize()
+        df.index.name = "Date"
+        out[ticker] = df[df.index < today.normalize()][["Open", "High", "Low", "Close", "Volume"]]
+    return out
+
+
 def _download(ticker: str, start: str, end: str) -> pd.DataFrame:
     import yfinance as yf
 

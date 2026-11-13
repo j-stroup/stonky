@@ -138,3 +138,20 @@ def test_dry_run_places_no_orders(tmp_path):
 def test_alpaca_refuses_live_keys():
     with pytest.raises(RuntimeError, match="PAPER"):
         AlpacaPaperBroker(api_key="AKLIVEKEY", secret_key="x")
+
+
+def _fake_alpaca(client_order_ids):
+    from types import SimpleNamespace
+    broker = AlpacaPaperBroker.__new__(AlpacaPaperBroker)
+    orders = [SimpleNamespace(client_order_id=c) for c in client_order_ids]
+    broker.client = SimpleNamespace(get_orders=lambda req: orders)
+    return broker
+
+
+def test_traded_today_sees_this_bots_orders():
+    assert _fake_alpaca(["stonks-abc123"]).traded_today(TODAY)
+
+
+def test_traded_today_ignores_other_orders():
+    assert not _fake_alpaca(["manual-order", None]).traded_today(TODAY)
+    assert not _fake_alpaca([]).traded_today(TODAY)
