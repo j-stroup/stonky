@@ -70,6 +70,7 @@ bash deploy/setup.sh
 
 `setup.sh` creates the Python environment, runs the tests and a dry run, then installs a systemd timer. The timer runs the bot Monday to Friday at 9:45 AM **Eastern**, whatever time zone the server is in. To update later, run `git pull`, then `bash deploy/setup.sh` again.
 
+- **Check on it:** `.venv/bin/python report.py` shows the account value and gain/loss since the start, open positions, closed trades, recent fills, whether the bot is halted or stopped, and any recent errors. It only reads the account and never trades.
 - **Logs:** `journalctl -u stonks-paper --since today` and `state/alpaca/journal.log`
 - **Pause:** `touch STOP`. Resume: `rm STOP`
 - **Remove:** `sudo systemctl disable --now stonks-paper.timer`
@@ -111,6 +112,7 @@ Decisions use the day's closing price. Orders are filled at the **next day's ope
 - `stonks/report.py`: summary stats and CSV output
 - `compare.py`: tune-then-check comparison of several settings
 - `paper_trade.py`: the daily paper-trading command
+- `report.py`: a read-only summary of the Alpaca paper account
 - `stonks/live.py`: the daily routine (decide, sell, buy, park) and safety stops
 - `stonks/broker.py`: the sim account and the Alpaca paper account behind one interface
 - `deploy/`: systemd service and timer, and `setup.sh` for a Linux server
