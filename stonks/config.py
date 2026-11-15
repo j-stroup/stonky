@@ -4,8 +4,12 @@ from dataclasses import dataclass, field
 
 # Sector ETFs: broad, liquid, and they existed for the whole test period
 # (individual stocks picked today would bias a backtest toward winners).
+#
+# ET (Energy Transfer, a single partnership) was added on purpose as a more
+# volatile position, to see how the rules behave on something that moves more.
 DEFAULT_UNIVERSE = [
     "XLK", "XLF", "XLV", "XLE", "XLI", "XLY", "XLP", "XLU", "XLB",
+    "ET",
 ]
 
 

@@ -81,7 +81,7 @@ bash deploy/setup.sh
 
 - **Kill switch:** create a file named `STOP` in this folder and nothing trades until you delete it.
 - **Drawdown halt:** if the account falls 12% from its best value, it stops buying. Sells still run, so stop losses keep working. It stays stopped until you run with `--reset-halt`. The backtest's worst drop was about 10%, so a bigger one means something is behaving differently from what was tested.
-- It only trades the ETFs in `config.py` and SHY. Anything else in the account is left alone.
+- It only trades the tickers in `config.py` (9 sector ETFs plus ET) and SHY. Anything else in the account is left alone.
 - It refuses to trade if the price data is stale or includes today's unfinished bar.
 - It runs once per day, even across computers. Use `--force` to run it again.
 - It only accepts paper keys.
