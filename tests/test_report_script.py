@@ -45,3 +45,41 @@ def test_report_flags_halt_and_stop_file():
     assert "STOP file present" in text
     assert "ERROR loading prices" in text
     assert "(none yet)" in text
+
+
+# --- Paper vs backtest ---------------------------------------------------
+
+from report import Comparison, format_comparison
+from stonks.backtest import run_backtest
+from stonks.config import BacktestConfig, Rules
+
+
+def _bt_result():
+    idx = pd.bdate_range("2026-11-02", periods=9)
+    def bars(closes, opens):
+        return pd.DataFrame({"Open": opens, "High": closes, "Low": closes, "Close": closes, "Volume": 1}, index=idx)
+    test = bars([100] * 5 + [90, 91, 92, 93], [100] * 5 + [90, 92, 92, 93])
+    flat = bars([50] * 9, [50] * 9)
+    rules = Rules(fast_sma_days=5, trend_sma_days=5, require_uptrend=False, dip_pct=0.05,
+                  slippage_pct=0.0, park_in=None)
+    cfg = BacktestConfig(start="2026-11-02", end="2026-11-12", starting_cash=10_000,
+                         universe=["TEST"], rules=rules)
+    return run_backtest({"TEST": test}, flat, cfg)
+
+
+def test_comparison_matches_when_paper_tracks_backtest():
+    bt = _bt_result()
+    c = Comparison(D("2026-11-09"), D("2026-11-12"), 10_000, bt.equity.iloc[-1] - 5, {"TEST"}, bt)
+    text = format_comparison(c)
+    assert "bought: TEST" in text
+    assert "Gap       -0.05%" in text
+    assert "normal" in text
+    assert "Different buys" not in text
+
+
+def test_comparison_flags_big_gap_and_missing_buys():
+    bt = _bt_result()
+    c = Comparison(D("2026-11-09"), D("2026-11-12"), 10_000, 9_500, {"XLE"}, bt)
+    text = format_comparison(c)
+    assert "bigger than expected" in text
+    assert "only in backtest: TEST; only in paper: XLE" in text

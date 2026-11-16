@@ -70,7 +70,7 @@ bash deploy/setup.sh
 
 `setup.sh` creates the Python environment, runs the tests and a dry run, then installs a systemd timer. The timer runs the bot Monday to Friday at 9:45 AM **Eastern**, whatever time zone the server is in. To update later, run `git pull`, then `bash deploy/setup.sh` again.
 
-- **Check on it:** `.venv/bin/python report.py` shows the account value and gain/loss since the start, open positions, closed trades, recent fills, whether the bot is halted or stopped, and any recent errors. It only reads the account and never trades.
+- **Check on it:** `.venv/bin/python report.py` shows the account value and gain/loss since the start, open positions, closed trades, recent fills, whether the bot is halted or stopped, and any recent errors. At the end, it replays the rules as a backtest over the days the bot has been trading and compares that with the paper account. A small gap is normal. A big gap or different buys means something in execution differs from what was tested. It only reads the account and never trades.
 - **Logs:** `journalctl -u stonks-paper --since today` and `state/alpaca/journal.log`
 - **Pause:** `touch STOP`. Resume: `rm STOP`
 - **Remove:** `sudo systemctl disable --now stonks-paper.timer`
