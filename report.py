@@ -78,6 +78,29 @@ def realized_trades(fills: list[FillRow], skip: set[str]) -> list[float]:
     return results
 
 
+def et_day(when: pd.Timestamp) -> pd.Timestamp:
+    """The Eastern calendar date of a fill time (Alpaca reports fills in UTC)."""
+    if when.tzinfo is not None:
+        when = when.tz_convert("America/New_York").tz_localize(None)
+    return when.normalize()
+
+
+def trading_days(s: Snapshot, today: pd.Timestamp) -> int:
+    """Market days from the bot's first trade through today, counting both ends.
+
+    Past days come from Alpaca's daily account history, so holidays aren't counted.
+    Today counts once the bot has run or traded today.
+    """
+    if not s.fills:
+        return 0
+    first = et_day(s.fills[0].when)
+    past = {d for d in s.daily_equity if d < today} or set(pd.bdate_range(first, today)[:-1])
+    days = {d for d in past if d >= first}
+    if s.state.last_run == f"{today:%Y-%m-%d}" or any(et_day(f.when) == today for f in s.fills):
+        days.add(today)
+    return len(days)
+
+
 def format_report(s: Snapshot, park: str | None, show_fills: int = 10, today: pd.Timestamp | None = None) -> str:
     today = today or pd.Timestamp.now(tz="America/New_York").tz_localize(None).normalize()
     gain = s.equity - s.start_value
@@ -93,6 +116,12 @@ def format_report(s: Snapshot, park: str | None, show_fills: int = 10, today: pd
     if s.stop_file:
         status += "   ** STOP file present: not trading **"
     lines.append(f"Bot status     {status}")
+    days = trading_days(s, today)
+    if days:
+        lines.append(f"Running        {days} trading day{'s' if days != 1 else ''} "
+                     f"(first trade {et_day(s.fills[0].when):%Y-%m-%d})")
+    else:
+        lines.append("Running        no trades yet")
 
     lines += ["", "Open positions"]
     if not s.positions:

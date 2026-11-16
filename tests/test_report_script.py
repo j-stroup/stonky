@@ -92,3 +92,25 @@ def test_write_atomic_replaces_the_file(tmp_path):
     write_atomic(target, "second")
     assert target.read_text(encoding="utf-8") == "second"
     assert [f.name for f in target.parent.iterdir()] == ["report.txt"]
+
+
+def test_trading_days_counts_market_days_since_first_trade():
+    from report import trading_days
+    # Alpaca history: Wed 11/11 is skipped as if it were a holiday.
+    history = {D(d): 10_000.0 for d in ["2026-10-30", "2026-11-02", "2026-11-03", "2026-11-04",
+                                         "2026-11-05", "2026-11-06", "2026-11-09", "2026-11-10",
+                                         "2026-11-12"]}
+    snap = Snapshot(10_000, 0, 10_000, "", [], fills(), State(last_run="2026-11-13"),
+                    daily_equity=history)
+    assert trading_days(snap, D("2026-11-13")) == 9      # 11/02..11/12 minus 11/11, plus today
+    snap.state = State(last_run="2026-11-12")
+    assert trading_days(snap, D("2026-11-13")) == 8      # hasn't run yet today
+    text = format_report(snap, park="SHY", today=D("2026-11-13"))
+    assert "Running        8 trading days (first trade 2026-11-02)" in text
+
+
+def test_trading_days_before_any_trade():
+    from report import trading_days
+    snap = Snapshot(10_000, 10_000, 10_000, "", [], [], State())
+    assert trading_days(snap, D("2026-11-13")) == 0
+    assert "no trades yet" in format_report(snap, park="SHY", today=D("2026-11-13"))
