@@ -155,3 +155,49 @@ def test_missing_park_prices_is_an_error():
                          rules=Rules(park_in="BOND"))
     with pytest.raises(ValueError):
         run_backtest({"FLAT": bars([50] * 3)}, bars([100] * 3), cfg)
+
+
+# --- Trailing stop (optional) --------------------------------------------
+
+TRAIL = Rules(trail_after_pct=0.06, trail_pct=0.03, stop_loss_pct=0.05, max_hold_days=10,
+              slow_loss_pct=0.02, slow_loss_days=3)
+
+
+def ride(closes, rules=TRAIL):
+    """Replay closes for a position bought at 100; return the first exit reason and its day."""
+    pos = make_position(100.0)
+    for day, close in enumerate(closes, 1):
+        pos.update(close, rules)
+        reason = exit_reason(pos, close, rules)
+        if reason:
+            return day, reason
+    return None, None
+
+
+def test_trailing_lets_a_winner_run_past_the_take_profit():
+    day, reason = ride([103, 107, 112, 120, 125, 121])     # +7% no longer sells
+    assert day == 6 and reason.startswith("trailing stop (+21.0%, best was +25.0%)")
+
+
+def test_trailing_does_not_start_before_the_threshold():
+    assert ride([103, 105, 102, 104]) == (None, None)
+
+
+def test_trailing_keeps_the_stop_loss():
+    day, reason = ride([98, 96, 94.5])
+    assert day == 3 and reason.startswith("stop loss")
+
+
+def test_max_hold_does_not_cut_a_running_winner():
+    day, reason = ride([101] * 3 + [107, 108, 109, 110, 111, 112, 113, 114])
+    assert reason is None
+
+
+def test_max_hold_still_applies_before_it_runs():
+    day, reason = ride([101] * 12)
+    assert day == 10 and reason.startswith("max hold")
+
+
+def test_default_rules_still_use_fixed_take_profit():
+    day, reason = ride([103, 107], rules=Rules())
+    assert day == 2 and reason.startswith("take profit")

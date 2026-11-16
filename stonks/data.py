@@ -13,15 +13,24 @@ def load_prices(ticker: str, start: str, end: str, refresh: bool = False) -> pd.
     path = CACHE_DIR / f"{ticker}.csv"
     start_ts, end_ts = pd.Timestamp(start), pd.Timestamp(end)
 
+    # The last day there could be data for (requests can run into the future).
+    latest_possible = min(end_ts, pd.Timestamp.today().normalize() - pd.Timedelta(days=1))
+    fetch_start, fetch_end = start_ts, end_ts
+
     df = None
     if path.exists() and not refresh:
         df = pd.read_csv(path, index_col="Date", parse_dates=True)
-        # Re-download if the cache doesn't reach back far enough.
-        if df.empty or df.index[0] > start_ts + pd.Timedelta(days=7):
+        # Re-download if the cache doesn't cover the requested range at either end
+        # (a week of slack for weekends and holidays). Download the union of both
+        # ranges, so one backtest period never wipes out another's data.
+        if df.empty:
+            df = None
+        elif df.index[0] > start_ts + pd.Timedelta(days=7) or df.index[-1] < latest_possible - pd.Timedelta(days=7):
+            fetch_start, fetch_end = min(start_ts, df.index[0]), max(end_ts, df.index[-1])
             df = None
 
     if df is None:
-        df = _download(ticker, start, end)
+        df = _download(ticker, fetch_start.strftime("%Y-%m-%d"), fetch_end.strftime("%Y-%m-%d"))
         df.to_csv(path, index_label="Date")
 
     return df.loc[start_ts:end_ts]

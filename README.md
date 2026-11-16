@@ -110,7 +110,7 @@ Decisions use the day's closing price. Orders are filled at the **next day's ope
 - `stonks/backtest.py`: the day-by-day simulation
 - `stonks/data.py`: price download and cache
 - `stonks/report.py`: summary stats and CSV output
-- `compare.py`: tune-then-check comparison of several settings
+- `compare.py`: tune-then-check comparison of several settings (`--grid exits` for trailing stops)
 - `paper_trade.py`: the daily paper-trading command
 - `report.py`: a read-only summary of the Alpaca paper account
 - `stonks/live.py`: the daily routine (decide, sell, buy, park) and safety stops
@@ -139,6 +139,14 @@ Decisions use the day's closing price. Orders are filled at the **next day's ope
 | Buy & hold SPY | 13.3% | -33.5% | -18.1% (2022) |
 
 On 2021–2025, years the pick was never tuned on, the rules made 5.0%/yr with a -6.4% worst drop. The plain 20/80 mix made 4.4%/yr with -8.7%. So the rules came out slightly ahead of a simple mix on both counts, but the gap is small enough that it could be luck. Paper trading will show whether it holds up.
+
+**2004–2014 check (with ET added, never tuned on):** 4.5%/yr with a -8.9% worst drop, and +1.7% in 2008 while SPY lost 36.7%. The 20/80 mix made 3.7%/yr with a -9.4% worst drop.
+
+**Trailing-stop experiment** (`compare.py --grid exits`, 20 combinations across three periods):
+- At 10% positions, the trailing stops that stayed within the -10% loss limit did about the same as the fixed +6%, sometimes a little better and sometimes a little worse. There was no consistent gain.
+- Wide trailing stops (5% after +6–8%) caught bigger moves in 2021–2025 (up to 11%/yr). But they did *worse* in 2015–2020, with drops of -12% to -19%. They work in some periods and not others, so they aren't reliable.
+- 15% positions raised returns in every period (e.g. 5.4% / 8.9% / 5.3% a year) but pushed the worst drops to -13% to -15%, past the -10% limit. This is the cleanest lever for more return, and it costs bigger drops.
+- Decision: keep the fixed +6% take-profit. The trailing stop stays in the code, switched off (`trail_after_pct = None`).
 
 ## Caveats
 

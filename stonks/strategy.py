@@ -43,6 +43,7 @@ class Position:
     entry_date: pd.Timestamp
     days_held: int = 0
     days_in_slow_loss: int = 0
+    peak_close: float = 0.0          # best close since it was bought
 
     def gain(self, price: float) -> float:
         return price / self.entry_price - 1.0
@@ -50,6 +51,7 @@ class Position:
     def update(self, close: float, rules: Rules) -> None:
         """Call once per trading day after the close."""
         self.days_held += 1
+        self.peak_close = max(self.peak_close, close)
         if self.gain(close) <= -rules.slow_loss_pct:
             self.days_in_slow_loss += 1
         else:
@@ -59,12 +61,18 @@ class Position:
 def exit_reason(position: Position, close: float, rules: Rules) -> str | None:
     """Return why this position should be sold, or None to keep holding."""
     gain = position.gain(close)
-    if gain >= rules.take_profit_pct:
+    trailing = rules.trail_after_pct is not None
+    peak_gain = position.gain(max(position.peak_close, close))
+    running = trailing and peak_gain >= rules.trail_after_pct   # a winner we're letting run
+
+    if not trailing and gain >= rules.take_profit_pct:
         return f"take profit ({gain:+.1%})"
+    if running and close <= max(position.peak_close, close) * (1 - rules.trail_pct):
+        return f"trailing stop ({gain:+.1%}, best was {peak_gain:+.1%})"
     if gain <= -rules.stop_loss_pct:
         return f"stop loss ({gain:+.1%})"
     if position.days_in_slow_loss >= rules.slow_loss_days:
         return f"slow loss: {position.days_in_slow_loss} days at or below -{rules.slow_loss_pct:.0%}"
-    if position.days_held >= rules.max_hold_days:
+    if not running and position.days_held >= rules.max_hold_days:
         return f"max hold {rules.max_hold_days} days ({gain:+.1%})"
     return None

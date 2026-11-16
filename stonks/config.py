@@ -22,6 +22,13 @@ class Rules:
     slow_loss_days: int = 10         # ...for this many trading days in a row
     max_hold_days: int = 60          # give up on a position after this long
 
+    # Optional trailing stop, to let winners run instead of selling at take_profit_pct.
+    # Once a position has been up trail_after_pct, sell when it falls trail_pct below
+    # its best close. None = off (use the fixed take-profit). Experimental: the paper
+    # bot keeps this off until the paper-trading review.
+    trail_after_pct: float | None = None
+    trail_pct: float = 0.03
+
     # --- When to buy ----------------------------------------------------
     fast_sma_days: int = 20          # short-term average
     dip_pct: float = 0.03            # buy when price is 3% below the short-term average
