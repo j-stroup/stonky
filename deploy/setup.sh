@@ -85,48 +85,56 @@ if [ ! -f state/web-path ]; then
     echo "r-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')" > state/web-path
 fi
 WEB_PATH="$(cat state/web-path)"
-SNIPPET="location = /$WEB_PATH/report.txt {
-    alias $WEB_DIR/report.txt;
-    default_type text/plain;
-    charset utf-8;
-    add_header Cache-Control \"no-store\";
-}"
 $SUDO systemctl start stonks-report.service || echo "The report didn't generate; check: journalctl -u stonks-report"
 
-IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+# The server's public IP. Override it if this guesses wrong: STONKS_IP=1.2.3.4 bash deploy/setup.sh
+IP="${STONKS_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 URL="http://${IP:-YOUR-SERVER-IP}/$WEB_PATH/report.txt"
+# A separate nginx site that answers only requests addressed to the bare IP, so any
+# websites already on this server (and whichever of them is the default) are untouched.
+SITE="server {
+    listen 80;
+    server_name ${IP:-YOUR-SERVER-IP};
+
+    location = /$WEB_PATH/report.txt {
+        alias $WEB_DIR/report.txt;
+        default_type text/plain;
+        charset utf-8;
+        add_header Cache-Control \"no-store\";
+    }
+    location / {
+        return 404;
+    }
+}"
+$SUDO rm -f /etc/nginx/default.d/stonks-report.conf   # older versions of this script put it there
 WEB_OK=""
-# Rocky/Alma/RHEL's nginx reads extra settings for its default site from /etc/nginx/default.d/.
-# Add one small file there and leave every other nginx setting alone.
-if command -v nginx >/dev/null 2>&1 && [ -d /etc/nginx/default.d ] \
-        && grep -qs "default.d" /etc/nginx/nginx.conf; then
-    echo "$SNIPPET" | $SUDO tee /etc/nginx/default.d/stonks-report.conf >/dev/null
+if [ -n "$IP" ] && command -v nginx >/dev/null 2>&1 && [ -d /etc/nginx/conf.d ]; then
+    echo "$SITE" | $SUDO tee /etc/nginx/conf.d/stonks-report.conf >/dev/null
     if $SUDO nginx -t >/dev/null 2>&1; then
         $SUDO systemctl reload nginx
         sleep 1
-        for host in "$IP" 127.0.0.1; do
-            [ -n "$host" ] || continue
-            if curl -fsS "http://$host/$WEB_PATH/report.txt" 2>/dev/null | head -1 | grep -q Generated; then
-                WEB_OK=1; break
-            fi
-        done
+        if curl -fsS -H "Host: $IP" "http://127.0.0.1/$WEB_PATH/report.txt" 2>/dev/null | head -1 | grep -q Generated; then
+            WEB_OK=1
+        fi
     else
-        echo "nginx rejected the new setting, so it was removed:"
-        $SUDO rm -f /etc/nginx/default.d/stonks-report.conf
+        echo "nginx rejected the new site, so it was removed:"
+        $SUDO rm -f /etc/nginx/conf.d/stonks-report.conf
         $SUDO nginx -t || true
     fi
 fi
 if [ -n "$WEB_OK" ]; then
     echo "Report page: $URL"
     echo "(Bookmark it. It updates after the 9:45 run and at 4:30 PM Eastern.)"
+    echo "If it doesn't load from your phone, the public IP may differ from $IP:"
+    echo "rerun with STONKS_IP=<your server's IP> bash deploy/setup.sh"
 else
-    echo "Couldn't confirm the report page works. The file is written to $WEB_DIR/report.txt."
-    echo "If the page doesn't load, add this inside the server { } block that answers on"
-    echo "port 80, then run: nginx -t && systemctl reload nginx"
+    echo "Couldn't set up the report page automatically. The file is written to"
+    echo "$WEB_DIR/report.txt. To serve it, save this as /etc/nginx/conf.d/stonks-report.conf"
+    echo "(with your server's public IP), then run: nginx -t && systemctl reload nginx"
     echo
-    echo "$SNIPPET"
+    echo "$SITE"
     echo
-    echo "The page should then be at: $URL"
+    echo "The page will then be at: $URL"
 fi
 
 echo
