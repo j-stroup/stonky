@@ -1,0 +1,11 @@
+[Unit]
+Description=stonks: write the paper account report for the web page
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=__DIR__/.venv/bin/python __DIR__/report.py --out __WEB__/report.txt
+TimeoutStartSec=5min

@@ -2,6 +2,7 @@
 
     python report.py              # summary with the last 10 fills
     python report.py --fills 30   # show more fills
+    python report.py --out /var/www/stonks/report.txt   # write it to a file (for the web page)
 
 Read-only: it never places or changes orders.
 """
@@ -228,26 +229,45 @@ def gather(broker: AlpacaPaperBroker, state_dir: Path) -> Snapshot:
                     State.load(state_dir / "state.json"), problems, (ROOT / "STOP").exists(), daily_equity)
 
 
-def main() -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--fills", type=int, default=10, help="how many recent fills to show")
-    args = p.parse_args()
-
+def build_report(fills: int) -> tuple[str, bool]:
+    """The full report text, and whether the account could be read."""
     load_env(ROOT / ".env")
     try:
         broker = AlpacaPaperBroker()
         snap = gather(broker, STATE_DIR / "alpaca")
     except Exception as e:
-        print(f"Couldn't read the Alpaca account: {e!r}")
-        return 1
-    print(format_report(snap, Rules().park_in, args.fills))
-    print()
+        return f"Couldn't read the Alpaca account: {e!r}", False
+    parts = [format_report(snap, Rules().park_in, fills), ""]
     try:
         today = pd.Timestamp.now(tz="America/New_York").tz_localize(None).normalize()
-        print(compare_with_backtest(snap, broker, today))
+        parts.append(compare_with_backtest(snap, broker, today))
     except Exception as e:
-        print(f"Paper vs backtest: couldn't run the comparison ({e!r})")
-    return 0
+        parts.append(f"Paper vs backtest: couldn't run the comparison ({e!r})")
+    return "\n".join(parts), True
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Replace the file in one step, so a web page never shows half a report."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.chmod(0o644)
+    tmp.replace(path)
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--fills", type=int, default=10, help="how many recent fills to show")
+    p.add_argument("--out", type=Path, help="write the report to this file instead of printing it")
+    args = p.parse_args()
+
+    text, ok = build_report(args.fills)
+    if args.out:
+        stamp = pd.Timestamp.now(tz="America/New_York").strftime("%a %Y-%m-%d %I:%M %p ET")
+        write_atomic(args.out, f"Generated {stamp}\n\n{text}\n")
+    else:
+        print(text)
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

@@ -83,3 +83,12 @@ def test_comparison_flags_big_gap_and_missing_buys():
     text = format_comparison(c)
     assert "bigger than expected" in text
     assert "only in backtest: TEST; only in paper: XLE" in text
+
+
+def test_write_atomic_replaces_the_file(tmp_path):
+    from report import write_atomic
+    target = tmp_path / "web" / "report.txt"
+    write_atomic(target, "first")
+    write_atomic(target, "second")
+    assert target.read_text(encoding="utf-8") == "second"
+    assert [f.name for f in target.parent.iterdir()] == ["report.txt"]

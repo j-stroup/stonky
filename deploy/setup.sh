@@ -63,20 +63,76 @@ echo "== Tests"
 echo "== Dry run (no orders)"
 .venv/bin/python paper_trade.py alpaca --dry-run
 
-echo "== Installing the daily timer"
+echo "== Installing the daily timers"
 systemd-analyze calendar "Mon..Fri 09:45 America/New_York" >/dev/null \
     || { echo "This systemd is too old for time zones in timers (needs v235+)."; exit 1; }
-for f in stonks-paper.service stonks-paper.timer; do
-    sed -e "s|__DIR__|$DIR|g" -e "s|__USER__|$USER_NAME|g" "deploy/$f" \
+WEB_DIR=/var/www/stonks
+$SUDO mkdir -p "$WEB_DIR"
+$SUDO chown "$USER_NAME" "$WEB_DIR"
+command -v restorecon >/dev/null 2>&1 && $SUDO restorecon -R "$WEB_DIR"   # SELinux: let nginx read it
+
+for f in stonks-paper.service stonks-paper.timer stonks-report.service stonks-report.timer; do
+    sed -e "s|__DIR__|$DIR|g" -e "s|__USER__|$USER_NAME|g" -e "s|__WEB__|$WEB_DIR|g" "deploy/$f" \
         | $SUDO tee "/etc/systemd/system/$f" >/dev/null
 done
 $SUDO systemctl daemon-reload
-$SUDO systemctl enable --now stonks-paper.timer
+$SUDO systemctl enable --now stonks-paper.timer stonks-report.timer
+
+echo "== Web report"
+# A random address, made once and kept, so scanners don't stumble onto the page.
+mkdir -p state
+if [ ! -f state/web-path ]; then
+    echo "r-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')" > state/web-path
+fi
+WEB_PATH="$(cat state/web-path)"
+SNIPPET="location = /$WEB_PATH/report.txt {
+    alias $WEB_DIR/report.txt;
+    default_type text/plain;
+    charset utf-8;
+    add_header Cache-Control \"no-store\";
+}"
+$SUDO systemctl start stonks-report.service || echo "The report didn't generate; check: journalctl -u stonks-report"
+
+IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+URL="http://${IP:-YOUR-SERVER-IP}/$WEB_PATH/report.txt"
+WEB_OK=""
+# Rocky/Alma/RHEL's nginx reads extra settings for its default site from /etc/nginx/default.d/.
+# Add one small file there and leave every other nginx setting alone.
+if command -v nginx >/dev/null 2>&1 && [ -d /etc/nginx/default.d ] \
+        && grep -qs "default.d" /etc/nginx/nginx.conf; then
+    echo "$SNIPPET" | $SUDO tee /etc/nginx/default.d/stonks-report.conf >/dev/null
+    if $SUDO nginx -t >/dev/null 2>&1; then
+        $SUDO systemctl reload nginx
+        sleep 1
+        for host in "$IP" 127.0.0.1; do
+            [ -n "$host" ] || continue
+            if curl -fsS "http://$host/$WEB_PATH/report.txt" 2>/dev/null | head -1 | grep -q Generated; then
+                WEB_OK=1; break
+            fi
+        done
+    else
+        echo "nginx rejected the new setting, so it was removed:"
+        $SUDO rm -f /etc/nginx/default.d/stonks-report.conf
+        $SUDO nginx -t || true
+    fi
+fi
+if [ -n "$WEB_OK" ]; then
+    echo "Report page: $URL"
+    echo "(Bookmark it. It updates after the 9:45 run and at 4:30 PM Eastern.)"
+else
+    echo "Couldn't confirm the report page works. The file is written to $WEB_DIR/report.txt."
+    echo "If the page doesn't load, add this inside the server { } block that answers on"
+    echo "port 80, then run: nginx -t && systemctl reload nginx"
+    echo
+    echo "$SNIPPET"
+    echo
+    echo "The page should then be at: $URL"
+fi
 
 echo
-systemctl list-timers stonks-paper.timer --no-pager
+systemctl list-timers 'stonks-*' --no-pager
 echo
 echo "Done. Logs:   journalctl -u stonks-paper --since today"
 echo "      Journal: $DIR/state/alpaca/journal.log"
 echo "      Pause:   touch $DIR/STOP     (rm it to resume)"
-echo "      Remove:  sudo systemctl disable --now stonks-paper.timer"
+echo "      Remove:  sudo systemctl disable --now stonks-paper.timer stonks-report.timer"

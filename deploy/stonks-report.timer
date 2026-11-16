@@ -1,0 +1,9 @@
+[Unit]
+Description=stonks: refresh the web report after the market closes
+
+[Timer]
+OnCalendar=Mon..Fri 16:30 America/New_York
+Persistent=true
+
+[Install]
+WantedBy=timers.target

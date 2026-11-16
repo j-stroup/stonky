@@ -9,3 +9,5 @@ User=__USER__
 WorkingDirectory=__DIR__
 ExecStart=__DIR__/.venv/bin/python __DIR__/paper_trade.py alpaca
 TimeoutStartSec=15min
+# Refresh the web report after every run, even a failed one.
+ExecStopPost=-+/usr/bin/systemctl start --no-block stonks-report.service
